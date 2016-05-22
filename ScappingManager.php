@@ -21,7 +21,7 @@ class ScappingManager
         $this->sql = $this->mySqliInit();
         error_reporting(E_ERROR | E_PARSE);
         $this->dateUnixEndTime = time();
-        $this->dateUnixStartTime = 1451606400;
+        $this->dateUnixStartTime = 1445990400;
     }
 
 
@@ -36,20 +36,68 @@ class ScappingManager
 
     public function execute(){
         //$this->getMatchesLinks();
-        //$this->storeMatchesScoreBoxes();
+        //$this->storeMatchesScoreBoxes($this->dateUnixStartTime,$this->dateUnixEndTime);
+        $this->getTeamScore('GSW', 1463356800);
+        $this->getTeamScore('OKC', 1463356800);
+        $this->sql->close();
     }
 
+    //<editor-fold desc="get score from team">
+    public function getProportionRows($dateOfMatch){
+        $query  = "SELECT AVG(`TLV`) AS `TLV`, AVG(`TLX`) AS `TLX`, AVG(`T2V`) AS `T2V`,AVG(`T2X`) AS `T2X`,AVG(`T3V`) AS `T3V`, AVG(`T3X`) AS `T3X`, AVG(`ASIST`) AS `ASIST`, AVG(`RO`) AS `RO`, AVG(`RD`) AS `RD`, AVG(`ROB`) AS `ROB`, AVG(`TAP`) AS `TAP`, AVG(`PER`) AS `PER`, AVG(`FAL`) AS `FAL` FROM `boxscores`, `matches` WHERE `link` = `match_id` AND `date` >= $this->dateUnixStartTime AND `date` < $dateOfMatch";
+        $result = $this->sql->query($query);
+        $row = $result->fetch_assoc();
+        $total = 0;
+        foreach ($row as $valor) {
+            $total += $valor;
+        }
+        foreach ($row as $key => $column) {
+            $weights[$key] = ($column / $total);
+        }
+        return $weights;
+    }
+
+    public function getTeamScore($teamId, $dateOfMatch){
+        $query = "SELECT `TLV`,`TLX`,`T2V`,`T2X`,`T3V`,`T3X`,`ASIST`,`RO`,`RD`,`ROB`,`TAP`,`PER`,`FAL` FROM `boxscores`, `matches` WHERE `team_id`='$teamId' AND `match_id`=`link` AND `date` < $dateOfMatch ORDER BY `match_id` DESC LIMIT 3";
+        $result = $this->sql->query($query);
+        $proportions = $this->getProportionRows($dateOfMatch);
+        $r = array();
+        while($row = $result->fetch_assoc()){
+            foreach ($row as $key => $column) {
+                if ($r[$key] == null) {
+                    $r[$key] = 0;
+                }
+                $r[$key] += ($column / $proportions[$key]);
+            }
+        }
+
+        $total = 0;
+        foreach ($r as $key => $column) {
+            if($key == 'TLX' ||
+                $key == 'T2X' ||
+                $key == 'T3X' ||
+                $key == 'PER' ||
+                $key == 'FAL') {
+                $total -= $column;
+            }else{
+                $total += $column;
+            }
+        }
+
+        echo "\n[$teamId->$total]\n";
+
+    }
+    //</editor-fold>
+
     //<editor-fold desc="scoreboards">
-    public function storeMatchesScoreBoxes(){
-        $query = "SELECT `link` FROM `matches`";
+    public function storeMatchesScoreBoxes($startdate,$endDate){
+        $query = "SELECT `link` FROM `matches` WHERE `date` >= $startdate AND `date` < $endDate";
         $result = $this->sql->query($query);
         while ($fila = $result->fetch_assoc()) {
             $match =  $fila['link'];
             echo $match . "\n";
             $this->getBoxScoresFromMatch($match);
         }
-
-        $this->sql->close();
         echo "fin";
     }
 
@@ -107,7 +155,6 @@ class ScappingManager
     public function getMatchesLinks()
     {
         if($this->dateUnixStartTime > $this->dateUnixEndTime) {
-            $this->sql->close();
             echo "fin";
             return;
         }

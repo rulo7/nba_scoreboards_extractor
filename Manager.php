@@ -6,8 +6,10 @@
  * Date: 15/05/16
  * Time: 12:23
  */
-class ScappingManager
+class Manager
 {
+
+    public $teams = "ATL,BOS,BRK,CHI,CHO,CLE,DAL,DEN,DET,GSW,HOU,IND,LAC,LAL,MEM,MIA,MIL,MIN,NOP,NYK,OKC,ORL,PHI,PHO,POR,SAC,SAS,TOR,UTA,WAS";
 
     public $sql;
     public $dateUnixStartTime;
@@ -35,11 +37,41 @@ class ScappingManager
     }
 
     public function execute(){
-        //$this->getMatchesLinks();
-        //$this->storeMatchesScoreBoxes($this->dateUnixStartTime,$this->dateUnixEndTime);
-        $this->getTeamScore('GSW', 1463356800);
-        $this->getTeamScore('OKC', 1463356800);
+        foreach (explode(",", $this->teams) as $team){
+            $this->analyzeTeamScores($team);
+        }
+        echo "Aciertos->$this->aciertos\n";
+        echo "Fallos->$this->fallos\n";
         $this->sql->close();
+    }
+
+
+    private $aciertos = 0;
+    private $fallos = 0;
+    public function analyzeTeamScores($teamId){
+
+        $query1 = "SELECT `date`,`match_id`,`TLV`,`T2V`,`T3V` FROM `boxscores`,`matches` WHERE `team_id`='$teamId' AND `match_id`=`link`";
+        $result1 = $this->sql->query($query1);
+
+        while ($row = $result1->fetch_assoc()) {
+            $matchId = $row["match_id"];
+            $date = $row["date"];
+            $query2 = "SELECT `team_id`,`TLV`,`T2V`,`T3V` FROM `boxscores` WHERE `team_id`!='$teamId' AND `match_id`='$matchId'";
+            $result2 = $this->sql->query($query2)->fetch_array();
+
+            $pts1 = $row["TLV"] + (2 * $row["T2V"]) + ($row["T3V"]);
+            $pts2 = $result2["TLV"] + (2 * $result2["T2V"]) + ($result2["T3V"]);
+
+            $score1 = $this->getTeamScore($teamId, $date);
+            $score2 = $this->getTeamScore($result2['team_id'], $date);
+
+            if($score1 > $score2 && $pts1 > $pts2)
+                $this->aciertos++;
+            else if ($score1 < $score2 && $pts1 < $pts2)
+                $this->aciertos++;
+            else
+                $this->fallos++;
+        }
     }
 
     //<editor-fold desc="get score from team">
@@ -58,7 +90,7 @@ class ScappingManager
     }
 
     public function getTeamScore($teamId, $dateOfMatch){
-        $query = "SELECT `TLV`,`TLX`,`T2V`,`T2X`,`T3V`,`T3X`,`ASIST`,`RO`,`RD`,`ROB`,`TAP`,`PER`,`FAL` FROM `boxscores`, `matches` WHERE `team_id`='$teamId' AND `match_id`=`link` AND `date` < $dateOfMatch ORDER BY `match_id` DESC LIMIT 3";
+        $query = "SELECT `TLV`,`TLX`,`T2V`,`T2X`,`T3V`,`T3X`,`ASIST`,`RO`,`RD`,`ROB`,`TAP`,`PER`,`FAL` FROM `boxscores`, `matches` WHERE `team_id`='$teamId' AND `match_id`=`link` AND `date` < $dateOfMatch ORDER BY `match_id` DESC LIMIT 5";
         $result = $this->sql->query($query);
         $proportions = $this->getProportionRows($dateOfMatch);
         $r = array();
@@ -84,18 +116,17 @@ class ScappingManager
             }
         }
 
-        echo "\n[$teamId->$total]\n";
+        return $total;
 
     }
     //</editor-fold>
 
-    //<editor-fold desc="scoreboards">
+    //<editor-fold desc="save scoreboards">
     public function storeMatchesScoreBoxes($startdate,$endDate){
         $query = "SELECT `link` FROM `matches` WHERE `date` >= $startdate AND `date` < $endDate";
         $result = $this->sql->query($query);
         while ($fila = $result->fetch_assoc()) {
             $match =  $fila['link'];
-            echo $match . "\n";
             $this->getBoxScoresFromMatch($match);
         }
         echo "fin";
@@ -151,7 +182,7 @@ class ScappingManager
     }
     //</editor-fold>
 
-    //<editor-fold desc="match-links">
+    //<editor-fold desc="save match-links">
     public function getMatchesLinks()
     {
         if($this->dateUnixStartTime > $this->dateUnixEndTime) {
